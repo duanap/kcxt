@@ -1,0 +1,47 @@
+name: Open PR after v3.3.6 import
+
+on:
+  push:
+    branches:
+      - agent/import-v3.3.6
+    paths:
+      - VERSION
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  open-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify imported version
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q '3\.3\.6' VERSION
+      - name: Remove temporary PR workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/open-pr-after-import.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "remove temporary import automation"
+          git push
+      - name: Open draft pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh pr create \
+            --draft \
+            --base main \
+            --head agent/import-v3.3.6 \
+            --title "import partner inventory v3.3.6" \
+            --body $'## What changed\n- Import the complete Partner Inventory v3.3.6 stable unified install/upgrade source package.\n- Includes PHP backend, PC admin, mobile/PWA, SQL schema/migrations, docs/scripts, Android shell, and OCR vendor assets.\n\n## Source integrity\n- Core source archive verified against SHA-256 `2024a3339602a775db09a4cf110fd03255745a1e8895336a0a8c9a9fc84e0ae2`.\n- OCR/Tesseract vendor assets restored from pinned v7.0.0 / chi_sim 4.0.0 sources and verified against the SHA-256 values from the supplied release package.\n\n## Intent\nNo intentional application behavior changes; this PR establishes the supplied v3.3.6 release as the repository baseline.'
