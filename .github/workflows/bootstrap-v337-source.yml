@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       HEAD_REF: ${{ github.event.pull_request.head.ref }}
-      ARCHIVE_SHA256: fc00883f75703be876ebae58bd903f3de2458ddf55036b305cbac3fd78fd61b2
+      ARCHIVE_SHA256: dbb4f9dca764aafcb634c8bdb8ab25d21c6a45ac12003e96db87e0d7a4933f01
     steps:
       - name: Check out bootstrap branch
         uses: actions/checkout@v4
@@ -24,21 +24,22 @@ jobs:
           ref: ${{ env.HEAD_REF }}
           fetch-depth: 0
 
-      - name: Verify bootstrap archive
+      - name: Rebuild and verify bootstrap archive
         shell: bash
         run: |
           set -euo pipefail
-          test -f .bootstrap/kcxt-v3.3.7-source.tar.gz
-          echo "${ARCHIVE_SHA256}  .bootstrap/kcxt-v3.3.7-source.tar.gz" | sha256sum -c -
+          test -d .bootstrap
+          archive="$RUNNER_TEMP/kcxt-v3.3.7-source.tar.xz"
+          cat .bootstrap/chunk-* > "$archive"
+          echo "${ARCHIVE_SHA256}  $archive" | sha256sum -c -
 
       - name: Replace bootstrap branch with verified source tree
         shell: bash
         run: |
           set -euo pipefail
-          archive="$RUNNER_TEMP/kcxt-v3.3.7-source.tar.gz"
-          cp .bootstrap/kcxt-v3.3.7-source.tar.gz "$archive"
+          archive="$RUNNER_TEMP/kcxt-v3.3.7-source.tar.xz"
           find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
-          tar -xzf "$archive" -C .
+          tar -xJf "$archive" -C .
           test "$(cat VERSION)" = "v3.3.7"
           test -f sql/migrations/3.3.4.sql
           test -f scripts/fetch_ocr_assets.php
