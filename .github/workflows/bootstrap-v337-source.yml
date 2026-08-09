@@ -1,0 +1,59 @@
+name: Bootstrap v3.3.7 source
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  import-source:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'agent/v3.3.6-hardening'
+    runs-on: ubuntu-latest
+    env:
+      HEAD_REF: ${{ github.event.pull_request.head.ref }}
+      ARCHIVE_SHA256: fc00883f75703be876ebae58bd903f3de2458ddf55036b305cbac3fd78fd61b2
+    steps:
+      - name: Check out bootstrap branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.HEAD_REF }}
+          fetch-depth: 0
+
+      - name: Verify bootstrap archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f .bootstrap/kcxt-v3.3.7-source.tar.gz
+          echo "${ARCHIVE_SHA256}  .bootstrap/kcxt-v3.3.7-source.tar.gz" | sha256sum -c -
+
+      - name: Replace bootstrap branch with verified source tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/kcxt-v3.3.7-source.tar.gz"
+          cp .bootstrap/kcxt-v3.3.7-source.tar.gz "$archive"
+          find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          tar -xzf "$archive" -C .
+          test "$(cat VERSION)" = "v3.3.7"
+          test -f sql/migrations/3.3.4.sql
+          test -f scripts/fetch_ocr_assets.php
+          if test -d .bootstrap; then
+            echo 'bootstrap directory must not survive extraction' >&2
+            exit 1
+          fi
+
+      - name: Commit verified source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --quiet && exit 0
+          git commit -m 'import v3.3.7 hardened source'
+          git push origin "HEAD:${HEAD_REF}"
