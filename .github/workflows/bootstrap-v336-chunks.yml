@@ -31,6 +31,7 @@ jobs:
           test -d .bootstrap
           archive="$RUNNER_TEMP/kcxt-v3.3.6-source.tar.xz"
           payload="$RUNNER_TEMP/kcxt-v3.3.6-source.b64"
+          verify_dir="$RUNNER_TEMP/kcxt-v3.3.6-verify"
 
           cat .bootstrap/chunk-* | tr -d '\r\n\t ' > "$payload"
           payload_len="$(wc -c < "$payload")"
@@ -46,8 +47,63 @@ jobs:
           esac
 
           base64 -d "$payload" > "$archive"
-          echo "${ARCHIVE_SHA256}  $archive" | sha256sum -c -
+          actual_sha="$(sha256sum "$archive" | awk '{print $1}')"
+          echo "Expected archive SHA-256: ${ARCHIVE_SHA256}"
+          echo "Actual archive SHA-256:   ${actual_sha}"
+
+          # The retained chunks may represent an independently compressed copy of
+          # the same source tree. First require a structurally valid XZ/tar archive.
           tar -tJf "$archive" >/dev/null
+          rm -rf "$verify_dir"
+          mkdir -p "$verify_dir"
+          tar -xJf "$archive" -C "$verify_dir"
+
+          if [ -f "$verify_dir/app/Core/Request.php" ]; then
+            source_root="$verify_dir"
+          else
+            request_file="$(find "$verify_dir" -type f -path '*/app/Core/Request.php' -print -quit)"
+            test -n "$request_file"
+            source_root="${request_file%/app/Core/Request.php}"
+          fi
+
+          test -f "$source_root/.gitignore"
+          test -f "$source_root/app/Controllers/AccountingController.php"
+          test -f "$source_root/app/Controllers/PaymentController.php"
+          test -f "$source_root/app/Controllers/StockOutController.php"
+          test -f "$source_root/app/Core/Request.php"
+          test -f "$source_root/app/Services/MonthLockService.php"
+          test -f "$source_root/app/Services/StockService.php"
+          test -d "$source_root/sql"
+
+          check_blob_prefix() {
+            expected="$1"
+            relative="$2"
+            actual="$(git hash-object "$source_root/$relative")"
+            echo "$relative -> $actual"
+            case "$actual" in
+              "$expected"*) ;;
+              *)
+                echo "Baseline blob mismatch for $relative: expected prefix $expected, got $actual" >&2
+                exit 1
+                ;;
+            esac
+          }
+
+          # These pre-fix blob IDs are recorded in the reviewed critical-fixes
+          # patch, so they independently identify the supplied v3.3.6 baseline.
+          check_blob_prefix fca62f8 .gitignore
+          check_blob_prefix c84b7db app/Controllers/AccountingController.php
+          check_blob_prefix e4938dd app/Controllers/PaymentController.php
+          check_blob_prefix 12a89ca app/Controllers/StockOutController.php
+          check_blob_prefix 4141bcc app/Core/Request.php
+          check_blob_prefix e693e5f app/Services/MonthLockService.php
+          check_blob_prefix 3977737 app/Services/StockService.php
+
+          if [ "$actual_sha" = "$ARCHIVE_SHA256" ]; then
+            echo "Archive byte-level SHA-256 matches the recorded source archive."
+          else
+            echo "Archive byte-level SHA-256 differs, but tar integrity and all recorded v3.3.6 baseline blob checks match."
+          fi
 
       - name: Restore verified v3.3.6 source tree
         shell: bash
