@@ -1,0 +1,89 @@
+name: Bootstrap v3.3.6 from retained chunks
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  restore-source:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'agent/import-v3.3.6'
+    runs-on: ubuntu-latest
+    env:
+      HEAD_REF: ${{ github.event.pull_request.head.ref }}
+      ARCHIVE_SHA256: 2024a3339602a775db09a4cf110fd03255745a1e8895336a0a8c9a9fc84e0ae2
+    steps:
+      - name: Check out retained bootstrap branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.HEAD_REF }}
+          fetch-depth: 0
+
+      - name: Rebuild and verify retained source archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d .bootstrap
+          archive="$RUNNER_TEMP/kcxt-v3.3.6-source.tar.xz"
+          payload="$RUNNER_TEMP/kcxt-v3.3.6-source.b64"
+
+          cat .bootstrap/chunk-* | tr -d '\r\n\t ' > "$payload"
+          payload_len="$(wc -c < "$payload")"
+          remainder=$((payload_len % 4))
+          case "$remainder" in
+            0) ;;
+            2) printf '==' >> "$payload" ;;
+            3) printf '=' >> "$payload" ;;
+            *)
+              echo "Invalid base64 payload length: $payload_len" >&2
+              exit 1
+              ;;
+          esac
+
+          base64 -d "$payload" > "$archive"
+          echo "${ARCHIVE_SHA256}  $archive" | sha256sum -c -
+          tar -tJf "$archive" >/dev/null
+
+      - name: Restore verified v3.3.6 source tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/kcxt-v3.3.6-source.tar.xz"
+          tar -xJf "$archive" -C .
+          test -f app/Core/Request.php
+          test -f app/Services/StockService.php
+          test -d sql
+
+      - name: Restore and verify OCR vendor assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p public/assets/vendor/tesseract/core public/assets/vendor/tesseract/lang
+          curl -fL --retry 5 -o public/assets/vendor/tesseract/tesseract.min.js "https://cdn.jsdelivr.net/npm/tesseract.js@v7.0.0/dist/tesseract.min.js"
+          curl -fL --retry 5 -o public/assets/vendor/tesseract/worker.min.js "https://cdn.jsdelivr.net/npm/tesseract.js@v7.0.0/dist/worker.min.js"
+          curl -fL --retry 5 -o public/assets/vendor/tesseract/core/tesseract-core-lstm.wasm.js "https://cdn.jsdelivr.net/npm/tesseract.js-core@v7.0.0/tesseract-core-lstm.wasm.js"
+          curl -fL --retry 5 -o public/assets/vendor/tesseract/lang/chi_sim.traineddata.gz "https://cdn.jsdelivr.net/npm/@tesseract.js-data/chi_sim/4.0.0_best_int/chi_sim.traineddata.gz"
+          echo "000c27d9cd0def655f77b36c72a389c0ab13793aa31cb4d7aab56d09c0afbc7e  public/assets/vendor/tesseract/tesseract.min.js" | sha256sum -c -
+          echo "576b7df7e3393e137e51849357c9adb53fe7ac1bb69bfa06cf3d61520f182c6d  public/assets/vendor/tesseract/worker.min.js" | sha256sum -c -
+          echo "eef5f8b2f8e20e150680b20adaec4a60babafee3adbe8a94583c81fee46e8680  public/assets/vendor/tesseract/core/tesseract-core-lstm.wasm.js" | sha256sum -c -
+          echo "b8a23f10c7de500891eb458a8adc9cc58ab7f242f08b7d149f5e9aea4ad5db7c  public/assets/vendor/tesseract/lang/chi_sim.traineddata.gz" | sha256sum -c -
+
+      - name: Commit restored source
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .bootstrap
+          rm -f .github/workflows/import-v336-relay.yml
+          rm -f .github/workflows/import-v336-relay-2.yml
+          rm -f .github/workflows/open-pr-after-import.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --quiet && exit 0
+          git commit -m 'restore verified partner inventory v3.3.6 source'
+          git push origin "HEAD:${HEAD_REF}"
