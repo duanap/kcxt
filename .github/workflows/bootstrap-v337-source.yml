@@ -30,7 +30,22 @@ jobs:
           set -euo pipefail
           test -d .bootstrap
           archive="$RUNNER_TEMP/kcxt-v3.3.7-source.tar.xz"
-          cat .bootstrap/chunk-* | base64 -d > "$archive"
+          payload="$RUNNER_TEMP/kcxt-v3.3.7-source.b64"
+
+          cat .bootstrap/chunk-* | tr -d '\r\n\t ' > "$payload"
+          payload_len="$(wc -c < "$payload")"
+          remainder=$((payload_len % 4))
+          case "$remainder" in
+            0) ;;
+            2) printf '==' >> "$payload" ;;
+            3) printf '=' >> "$payload" ;;
+            *)
+              echo "Invalid base64 payload length: $payload_len" >&2
+              exit 1
+              ;;
+          esac
+
+          base64 -d "$payload" > "$archive"
           echo "${ARCHIVE_SHA256}  $archive" | sha256sum -c -
 
       - name: Replace bootstrap branch with verified source tree
