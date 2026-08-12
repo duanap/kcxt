@@ -1,0 +1,57 @@
+name: Import v3.3.6 source final
+
+on:
+  push:
+    branches:
+      - agent/import-v3.3.6
+    paths:
+      - .github/workflows/import-v336-relay-2.yml
+
+permissions:
+  contents: write
+
+jobs:
+  import:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download and verify source archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL --retry 8 --connect-timeout 15 --max-time 180 \
+            -o /tmp/source.tar.xz \
+            "https://kcxt-v336-duanap-20260808-9f2c.serveo.net/kcxt-source-v336-noocr.tar.xz"
+          echo "2024a3339602a775db09a4cf110fd03255745a1e8895336a0a8c9a9fc84e0ae2  /tmp/source.tar.xz" | sha256sum -c -
+          tar -xJf /tmp/source.tar.xz -C .
+
+      - name: Restore and verify OCR vendor assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p public/assets/vendor/tesseract/core public/assets/vendor/tesseract/lang
+          curl -fL --retry 5 -o public/assets/vendor/tesseract/tesseract.min.js "https://cdn.jsdelivr.net/npm/tesseract.js@v7.0.0/dist/tesseract.min.js"
+          curl -fL --retry 5 -o public/assets/vendor/tesseract/worker.min.js "https://cdn.jsdelivr.net/npm/tesseract.js@v7.0.0/dist/worker.min.js"
+          curl -fL --retry 5 -o public/assets/vendor/tesseract/core/tesseract-core-lstm.wasm.js "https://cdn.jsdelivr.net/npm/tesseract.js-core@v7.0.0/tesseract-core-lstm.wasm.js"
+          curl -fL --retry 5 -o public/assets/vendor/tesseract/lang/chi_sim.traineddata.gz "https://cdn.jsdelivr.net/npm/@tesseract.js-data/chi_sim/4.0.0_best_int/chi_sim.traineddata.gz"
+          echo "000c27d9cd0def655f77b36c72a389c0ab13793aa31cb4d7aab56d09c0afbc7e  public/assets/vendor/tesseract/tesseract.min.js" | sha256sum -c -
+          echo "576b7df7e3393e137e51849357c9adb53fe7ac1bb69bfa06cf3d61520f182c6d  public/assets/vendor/tesseract/worker.min.js" | sha256sum -c -
+          echo "eef5f8b2f8e20e150680b20adaec4a60babafee3adbe8a94583c81fee46e8680  public/assets/vendor/tesseract/core/tesseract-core-lstm.wasm.js" | sha256sum -c -
+          echo "b8a23f10c7de500891eb458a8adc9cc58ab7f242f08b7d149f5e9aea4ad5db7c  public/assets/vendor/tesseract/lang/chi_sim.traineddata.gz" | sha256sum -c -
+
+      - name: Commit imported source
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .bootstrap
+          rm -f .github/workflows/import-v336-relay.yml
+          rm -f .github/workflows/import-v336-relay-2.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "import partner inventory v3.3.6"
+          git push
